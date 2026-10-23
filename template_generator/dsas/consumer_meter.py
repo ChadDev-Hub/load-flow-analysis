@@ -4,7 +4,7 @@ import re
 from template_generator.dsas.generator import DSAS_TEMPLATE_GENERATOR
 from datetime import datetime
 import calendar
-
+import os
 class ConsumerMeter(DSAS_TEMPLATE_GENERATOR):
     def __init__(self, substation_id, billing_period, db_engine:Engine):
         super().__init__(substation_id, billing_period, db_engine)
@@ -67,7 +67,7 @@ class ConsumerMeter(DSAS_TEMPLATE_GENERATOR):
         consumer['customer_type'] = consumer.apply(lambda x: self.type_classification(x['customer_type'], x['kwh_used']), axis=1)
         consumer['service_voltage'] = (consumer['nominal_voltage_kv'] * 1000).astype("int")
         consumer['phase'] = consumer.apply(lambda x: self.phase_classification(x['phasing']), axis=1)
-        consumer = consumer[['customer_id', 'customer_name', 'service_voltage', 'phase']]
+        consumer = consumer[['customer_id', 'customer_name','customer_type', 'service_voltage', 'phase']]
         consumer.insert(0,'count', consumer.index + 1)
         return consumer
     
@@ -118,6 +118,22 @@ class ConsumerMeter(DSAS_TEMPLATE_GENERATOR):
             return 'MAIN LAND'
         else:
             return 'ISLANDS'
+    def load_curve_description(self):
+        description = {
+            'RES1': 'Low consumption residential kwh used < 300kwh',
+            'RES2': 'Low consumption residential kwh used > 300kwh',
+            'RES3': 'Medium consumption residential kwh used > 800kwh',
+            'RES4': 'High consumption residential kwh used > 2500kwh',
+            'COM1': 'Low consumption commercial kwh used < 300kwh',
+            'COM2': 'Low consumption commercial kwh used > 300kwh',
+            'COM3': 'Medium consumption commercial kwh used > 800kwh',
+            'COM4': 'High consumption commercial kwh used > 2500kwh',
+            'SL': 'Street Lights',
+            'IND': 'Industrial',
+            'PB1': 'low to medium consumption public building',
+            'PB2': 'high consumption public building'
+        }
+        return description
         
     # LOAD CURVE DATA
     def save_load_curve_data(self):
@@ -128,9 +144,27 @@ class ConsumerMeter(DSAS_TEMPLATE_GENERATOR):
         provider = re.search(r'[A-Za-z]*',self.substation_id[0]).group(0)
         lcdf.insert(1, 'load_curve_id', provider+lcdf['customer_type'])
         lcdf.drop(columns = ['id','area','max'], inplace=True)
+        lcdf.insert(2, 'description', lcdf['customer_type'].map(self.load_curve_description()))
+        lcdf.insert(0, 'count', lcdf.index + 1)
         return lcdf
     
-    # SECONDARY CONSUMER SERVICEDROP WIRE
-    def save_secondary_customer_drop_wire(self):
-        consumer = self.read_and_process_consumer_meter()
-        return consumer.columns
+    # GENERATE ALL TEMPLATES
+    def generate_template(self, output_folder):
+        complete = False
+        try:
+            customer = self.save_customer_data()
+            billing_cycle = self.save_billing_cycle()
+            customer_energy_consumption = self.save_customer_energy_consumption()
+            load_curve = self.save_load_curve_data()
+            customer.to_csv(os.path.join(output_folder,"customer.csv"), index=False)
+            billing_cycle.to_csv(os.path.join(output_folder,"billing_cycle.csv"), index=False)
+            customer_energy_consumption.to_csv(os.path.join(output_folder,"customer_energy_consumption.csv"), index=False)
+            load_curve.to_csv(os.path.join(output_folder,"load_curve.csv"), index=False)
+            complete = True     
+        except Exception as e:
+            print(e)
+            complete = False
+        finally:
+            return complete
+    
+    

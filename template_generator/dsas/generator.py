@@ -3,9 +3,7 @@ import geopandas as gpd
 from sqlalchemy import text, create_engine, bindparam, Engine
 from dotenv import load_dotenv
 from datetime import datetime
-
-
-
+from pathlib import Path
 pd.options.display.float_format = '{:,.2f}'.format
 pd.options.display.max_columns = None
 import calendar
@@ -17,7 +15,22 @@ class DSAS_TEMPLATE_GENERATOR:
         self.billing_period = billing_period
         self.year = billing_period[:4]
         self.db_engine = db_engine
+        BaseDir = Path(__file__).resolve().parent
+        self.parentRoot = BaseDir.parents[1]
+    def get_mfsr_data(self):
         
+        # MFSR DATA
+        mfsr_data = pd.read_csv(f"{self.parentRoot}/mfsr/cleaned/mfsr_{self.year}.csv")
+        mfsr_data = mfsr_data[['substation_id','Sales in KWH', 'billing_period', 'KWH Purchased', 'Coop Consumption']]
+        mfsr_data = mfsr_data.loc[mfsr_data['billing_period'].astype(str) == str(self.billing_period)]
+        mfsr_data = mfsr_data.loc[mfsr_data['substation_id'].astype(str).isin(self.substation_id)]
+        return mfsr_data
+    def process_simulation_parameter(self):
+        # MFSR DATA
+        mfsr_data = self.get_mfsr_data()
+        mfsr_data = mfsr_data[['substation_id', 'KWH Purchased', 'Coop Consumption']]
+        return mfsr_data
+    
     # READ AND PROCESS DATABASE DATA
     # CONSUMER METER
     def read_and_process_consumer_meter(self):
@@ -73,13 +86,7 @@ class DSAS_TEMPLATE_GENERATOR:
             
             
     
-            
-            # MFSR DATA
-            mfsr_data = pd.read_csv(f"mfsr/cleaned/mfsr_{self.year}.csv")
-            mfsr_data = mfsr_data[['substation_id','Sales in KWH', 'billing_period']]
-            mfsr_data = mfsr_data.loc[mfsr_data['billing_period'].astype(str) == str(self.billing_period)]
-            mfsr_data = mfsr_data.loc[mfsr_data['substation_id'].astype(str).isin(self.substation_id)]
-            
+            mfsr_data = self.get_mfsr_data()
             
             
             # SCALING KWH DATA
@@ -156,8 +163,8 @@ class DSAS_TEMPLATE_GENERATOR:
             
             """
         ).bindparams(bindparam("substation", expanding=True))
-        dt_df = gpd.read_postgis(stmt, self.db_engine, geom_col='geom', params={"substation":self.substation_id})
-
+        dt_df = pd.read_sql(stmt, self.db_engine,params={"substation":self.substation_id})
+        
 
         cor_bus_dt_df = pd.read_excel("./sample-data/cor_bus_202401.xls", sheet_name="Distribution Transformer", engine="calamine")
         unique_values_df = cor_bus_dt_df[
@@ -165,6 +172,7 @@ class DSAS_TEMPLATE_GENERATOR:
                     'KVA Rating',
                     'Secondary Voltage Rating (kV)',
                     'Primary Voltage Rating(kV)',
+                    '%Z',
                     'X/R Ratio',
                     'No-Load Loss (kW)',
                     'Exciting Current (%)'
@@ -172,7 +180,21 @@ class DSAS_TEMPLATE_GENERATOR:
             ]
 
         unique_values_df = unique_values_df.drop_duplicates()
-        dt_df['kva_rating'] = dt_df['kva_rating'].apply(lambda x: x.replace("kVA", "")).astype("float")
+       
+        unique_values_df['KVA Rating'] = (unique_values_df['KVA Rating']
+                                          .astype("string")
+                                          .str.replace(r"KVA","", regex=True, case=False)
+                                          .str.strip()
+                                          .str.replace(r"(\.\d*?)0+$", "", regex=True)
+                                          .astype("float64"))
+       
+        dt_df['kva_rating'] = (dt_df['kva_rating'].astype("string")
+                               .str.replace(r"KVA","", regex=True, case=False)
+                               .str.strip()
+                               .str.replace(r"(\.\d*?)0+$", "", regex=True)
+                               .astype("float64"))
+        
+        
         dt_merge = dt_df.merge(unique_values_df, how="left", 
                     left_on=["kva_rating", 'primary_voltage_rating', 'secondary_voltage_rating'], 
                     right_on=["KVA Rating", 'Primary Voltage Rating(kV)', 'Secondary Voltage Rating (kV)'])

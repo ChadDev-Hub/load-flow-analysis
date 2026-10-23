@@ -1,0 +1,2 @@
+count,primary_line_id,from_bus_id,to_bus_id,phasing,length_meters,conductor_type,conductor_size,conductor_unit,no_of_cores,diameter_underarmour,armour_wire_diameter,overall_diameter,ac_resistance_ohm_per_meter,inductive_resistance,capacitant,earth_resistivity_ohm_meter
+1,F2_L012A0217,F2_P012A0191,F2_P012A0217,CN,1797.3043,CU,500000,CM,1,43.82,0.1,49.6,0.09,0.25,0.22,100

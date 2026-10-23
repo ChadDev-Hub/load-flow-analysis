@@ -1,7 +1,7 @@
 from .consumer_meter import ConsumerMeter
 from sqlalchemy import text, bindparam
 import pandas as pd
-
+import os
 
 class ServiceDropWires(ConsumerMeter):
     def __init__(self, substation_id, billing_period, db_engine):
@@ -57,6 +57,21 @@ class ServiceDropWires(ConsumerMeter):
                        'spacing_d3n_meters', 'spacing_dc1_c2_meters', 'height_h1_meters',
                        'height_h2_meters', 'height_h3_meters', 'height_hn_meters',
                        'earth_resistivity_ohm_meter']]
+            psd.insert(0, "count", psd.index + 1)
             return psd
         except Exception as e:
             print(e)
+
+    def generate_template(self, output_folder):
+        complete = False
+        try:
+            secondary_service_drop = self.secondary_service_drop()
+            primary_service_drop = self.primary_service_drop()
+            secondary_service_drop.to_csv(os.path.join(output_folder, "secondary_service_drop.csv"), index=False)
+            primary_service_drop.to_csv(os.path.join(output_folder,"primary_service_drop.csv"),index=False)
+            complete = True
+        except Exception as e:
+            print(e)
+            complete = False
+        finally:
+            return complete
